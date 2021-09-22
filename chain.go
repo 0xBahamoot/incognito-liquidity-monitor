@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/incognitochain/incognito-chain/common"
@@ -131,9 +132,14 @@ func getNewState(height uint64) (*jsonresult.CurrentPDEState, error) {
 	}{
 		BeaconHeight: height,
 	}
+retry:
 	var state jsonresult.CurrentPDEState
 	resultJson, err := SendQuery("getpdestate", []interface{}{beaconHeight})
 	if err != nil {
+		if strings.Contains(err.Error(), "Can't found ConsensusStateRootHash of beacon height") {
+			log.Println("retry getNewState")
+			goto retry
+		}
 		return nil, err
 	}
 	err = ParseResponse(resultJson, &state)
@@ -272,6 +278,7 @@ func resetCheckPointForToken(instList [][]string, state *jsonresult.CurrentPDESt
 			}
 		}
 	}
+	log.Println("token need to reset", len(result))
 	return result
 }
 

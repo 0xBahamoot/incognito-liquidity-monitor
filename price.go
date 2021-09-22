@@ -55,9 +55,11 @@ func getPrice() (map[string]float32, error) {
 			Symbol string `json:"symbol"`
 			Price  string `json:"price"`
 		}
+	retry:
 		resp, err := http.Get(binancePriceURL + v)
 		if err != nil {
-			return nil, err
+			log.Println(err)
+			goto retry
 		}
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
