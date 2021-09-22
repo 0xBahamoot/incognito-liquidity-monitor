@@ -54,21 +54,6 @@ func saveState(state State) error {
 	return lvdb.Put(key, stateBytes, nil)
 }
 
-func loadCheckPointAmount(height uint64) (*PoolAmount, error) {
-	key := []byte(prefixCheckpointPoolAmount)
-	key = append(key, []byte(fmt.Sprintf("%v", height))...)
-	var result PoolAmount
-	value, err := lvdb.Get([]byte(key), nil)
-	if err != nil {
-		if err == leveldb.ErrNotFound {
-			return nil, nil
-		}
-		return nil, err
-	}
-	err = json.Unmarshal(value, &result)
-	return &result, err
-}
-
 func savePriceHistory(price PriceHistory) error {
 	key := []byte(prefixPriceHistory)
 	key = append(key, []byte(fmt.Sprintf("%v", price.Beacon))...)
@@ -81,18 +66,8 @@ func savePriceHistory(price PriceHistory) error {
 
 func saveChangeHistory(change ChangeHistory) error {
 	key := []byte(prefixChangeHistory)
-	key = append(key, []byte(fmt.Sprintf("%v-%v", change.CheckpointBeacon, change.Beacon))...)
+	key = append(key, []byte(fmt.Sprintf("%v", change.Beacon))...)
 	dataBytes, err := json.Marshal(change)
-	if err != nil {
-		return err
-	}
-	return lvdb.Put(key, dataBytes, nil)
-}
-
-func saveCheckPointPoolAmount(pool PoolAmount) error {
-	key := []byte(prefixCheckpointPoolAmount)
-	key = append(key, []byte(fmt.Sprintf("%v", pool.CheckpointBeacon))...)
-	dataBytes, err := json.Marshal(pool)
 	if err != nil {
 		return err
 	}
@@ -101,10 +76,37 @@ func saveCheckPointPoolAmount(pool PoolAmount) error {
 
 func savePoolAmount(pool PoolAmount) error {
 	key := []byte(prefixPoolAmount)
-	key = append(key, []byte(fmt.Sprintf("%v-%v", pool.CheckpointBeacon, pool.Beacon))...)
+	key = append(key, []byte(fmt.Sprintf("%v", pool.Beacon))...)
 	dataBytes, err := json.Marshal(pool)
 	if err != nil {
 		return err
 	}
 	return lvdb.Put(key, dataBytes, nil)
+}
+
+func getPoolAmount(height uint64) (*PoolAmount, error) {
+	var result PoolAmount
+	key := []byte(prefixPoolAmount)
+	key = append(key, []byte(fmt.Sprintf("%v", height))...)
+	value, err := lvdb.Get([]byte(prefixState), nil)
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	err = json.Unmarshal(value, &result)
+	return &result, err
+}
+
+func loadCheckPointAmount(checkpoints map[string]uint64) (map[string]*PoolAmount, error) {
+	result := make(map[string]*PoolAmount)
+	for tokenID, v := range checkpoints {
+		pool, err := getPoolAmount(v)
+		if err != nil {
+			return nil, err
+		}
+		result[tokenID] = pool
+	}
+	return result, nil
 }

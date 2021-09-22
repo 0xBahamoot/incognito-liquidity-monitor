@@ -28,7 +28,6 @@ func getBeaconBlockAndPDEState() error {
 	if currentCheckpoint == nil {
 		beaconHeight = currentState.CurrentBeacon
 	}
-	var newCheckpoint *PoolAmount
 	if currentState.CurrentBeacon <= PDEXV3Breakpoint {
 		state, err := getNewState(beaconHeight)
 		if err != nil {
@@ -48,37 +47,34 @@ func getBeaconBlockAndPDEState() error {
 			return err
 		}
 
-		if currentCheckpoint == nil {
-			newCheckpoint = newPoolAmount
-			newPoolAmount.CheckpointBeacon = beaconHeight
-			err = saveCheckPointPoolAmount(*newPoolAmount)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			block, err := getBlock(beaconHeight)
-			if err != nil {
-				panic(err)
-			}
-			willResetCheckPoint := isContainLiquidityInstr(block.Instructions)
-			if willResetCheckPoint {
-				newCheckpoint = newPoolAmount
-				newPoolAmount.CheckpointBeacon = beaconHeight
-				err = saveCheckPointPoolAmount(*newPoolAmount)
-				if err != nil {
-					panic(err)
-				}
+		block, err := getBlock(beaconHeight)
+		if err != nil {
+			panic(err)
+		}
+		resetTokenList := resetCheckPointForToken(block.Instructions)
+
+		for tokenID, _ := range newPoolAmount.Amount {
+			if _, ok := currentCheckpoint[tokenID]; !ok {
+				currentCheckpoint[tokenID] = newPoolAmount
 			} else {
-				newCheckpoint = currentCheckpoint
-				newPoolAmount.CheckpointBeacon = currentCheckpoint.CheckpointBeacon
+				willReset := false
+				for _, v := range resetTokenList {
+					if v == tokenID {
+						willReset = true
+					}
+				}
+				if willReset {
+					currentCheckpoint[tokenID] = newPoolAmount
+				}
 			}
 		}
-		changeHst, err := processChange(*newCheckpoint, *newPoolAmount)
+
+		changeHst, err := processChange(currentCheckpoint, *newPoolAmount)
 		if err != nil {
 			panic(err)
 		}
 		changeHst.Beacon = beaconHeight
-		changeHst.CheckpointBeacon = newPoolAmount.CheckpointBeacon
+		changeHst.CheckpointBeacon = currentState.CheckpointBeacon
 
 		err = savePriceHistory(*newPricePoint)
 		if err != nil {
@@ -91,10 +87,6 @@ func getBeaconBlockAndPDEState() error {
 		err = saveChangeHistory(*changeHst)
 		if err != nil {
 			panic(err)
-		}
-		if newCheckpoint != nil {
-			currentCheckpoint = newCheckpoint
-			currentState.CheckpointBeacon = beaconHeight
 		}
 		currentState.CurrentBeacon = beaconHeight
 		err = saveState(*currentState)
@@ -197,16 +189,16 @@ func extractPoolAmounts(state *jsonresult.CurrentPDEState) (*PoolAmount, error) 
 	return &newPoolAmount, nil
 }
 
-func processChange(checkpoint PoolAmount, current PoolAmount) (*ChangeHistory, error) {
+func processChange(checkpoint map[string]*PoolAmount, current PoolAmount) (*ChangeHistory, error) {
 	changeHst := ChangeHistory{
 		Value: make(map[string]float32),
 	}
-	for tokenID, amount := range checkpoint.Amount {
-		newAmount := current.Amount[tokenID]
-		value := newAmount - amount
+	for tokenID, amount := range current.Amount {
+		checkpointAmount := checkpoint[tokenID].Amount[tokenID]
+		value := amount - checkpointAmount
 		changeHst.Value[tokenID] = value
 	}
-	log.Printf("processed change for %v token\n", len(checkpoint.Amount))
+	log.Printf("processed change for %v token\n", len(current.Amount))
 	return &changeHst, nil
 }
 
@@ -222,7 +214,8 @@ func willAlert(change *ChangeHistory, price *PriceHistory) (float32, bool) {
 	return totalValue, false
 }
 
-func isContainLiquidityInstr(instList [][]string) bool {
+func resetCheckPointForToken(instList [][]string) []string {
+	var result []string
 	for _, inst := range instList {
 		metadataType, err := strconv.Atoi(inst[0])
 		if err != nil {
@@ -232,19 +225,29 @@ func isContainLiquidityInstr(instList [][]string) bool {
 		switch metadataType {
 		case metadata.PDEContributionMeta, metadata.PDEPRVRequiredContributionRequestMeta:
 			if contributionStatus == common.PDEContributionMatchedChainStatus || contributionStatus == common.PDEContributionMatchedNReturnedChainStatus {
-				return true
+				return nil
 			}
 		case metadata.PDEWithdrawalRequestMeta:
 			if contributionStatus != common.PDEWithdrawalRejectedChainStatus {
-				return true
+				return nil
 			}
 		}
 	}
-	return false
+	return result
 }
 
 func detectBeaconStartPoint() (uint64, error) {
 	var result uint64
 
+	var info *jsonresult.GetBlockChainInfoResult
+	resultJson, err := SendQuery("getblockchaininfo", []interface{}{})
+	if err != nil {
+		return 0, err
+	}
+	err = ParseResponse(resultJson, &info)
+	if err != nil {
+		return 0, err
+	}
+	result = info.BestBlocks[-1].Height
 	return result, nil
 }
