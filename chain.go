@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -51,7 +53,7 @@ func getBeaconBlockAndPDEState() error {
 		if err != nil {
 			panic(err)
 		}
-		resetTokenList := resetCheckPointForToken(block.Instructions)
+		resetTokenList := resetCheckPointForToken(block.Instructions, state)
 
 		for tokenID, _ := range newPoolAmount.Amount {
 			if _, ok := currentCheckpoint[tokenID]; !ok {
@@ -214,8 +216,9 @@ func willAlert(change *ChangeHistory, price *PriceHistory) (float32, bool) {
 	return totalValue, false
 }
 
-func resetCheckPointForToken(instList [][]string) []string {
+func resetCheckPointForToken(instList [][]string, state *jsonresult.CurrentPDEState) []string {
 	var result []string
+	tokenIDs := []string{USDC, USDT, BTC, DAI, ETH, BNB, XMR, LTC, DASH, MATIC, ZEC}
 	for _, inst := range instList {
 		metadataType, err := strconv.Atoi(inst[0])
 		if err != nil {
@@ -224,12 +227,48 @@ func resetCheckPointForToken(instList [][]string) []string {
 		contributionStatus := inst[2]
 		switch metadataType {
 		case metadata.PDEContributionMeta, metadata.PDEPRVRequiredContributionRequestMeta:
-			if contributionStatus == common.PDEContributionMatchedChainStatus || contributionStatus == common.PDEContributionMatchedNReturnedChainStatus {
-				return nil
+			if contributionStatus == common.PDEContributionMatchedChainStatus {
+				var md metadata.PDEMatchedContribution
+				err := json.Unmarshal([]byte(inst[3]), &md)
+				if err != nil {
+					panic(err)
+				}
+				pool := state.PDEPoolPairs[md.PDEContributionPairID]
+				for _, v := range tokenIDs {
+					if pool.Token1IDStr == v || pool.Token2IDStr == v {
+						result = append(result, v)
+					}
+				}
+			}
+			if contributionStatus == common.PDEContributionMatchedNReturnedChainStatus {
+				var md metadata.PDEMatchedNReturnedContribution
+				err := json.Unmarshal([]byte(inst[3]), &md)
+				if err != nil {
+					panic(err)
+				}
+				pool := state.PDEPoolPairs[md.PDEContributionPairID]
+				for _, v := range tokenIDs {
+					if pool.Token1IDStr == v || pool.Token2IDStr == v {
+						result = append(result, v)
+					}
+				}
 			}
 		case metadata.PDEWithdrawalRequestMeta:
 			if contributionStatus != common.PDEWithdrawalRejectedChainStatus {
-				return nil
+				contentBytes, err := base64.StdEncoding.DecodeString(inst[3])
+				if err != nil {
+					panic(err)
+				}
+				var md metadata.PDEWithdrawalAcceptedContent
+				err = json.Unmarshal(contentBytes, &md)
+				if err != nil {
+					panic(err)
+				}
+				for _, v := range tokenIDs {
+					if md.PairToken1IDStr == v || md.PairToken2IDStr == v {
+						result = append(result, v)
+					}
+				}
 			}
 		}
 	}
