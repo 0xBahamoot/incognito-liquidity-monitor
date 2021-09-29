@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -105,7 +104,7 @@ func getBeaconBlockAndPDEState() error {
 				sendSlackNoti(fmt.Sprintf("Change have gone below -%v 👋 💰 😭, current change is %v ", ChangeThreshold, amount))
 			}
 		}
-		sendSlackNoti(fmt.Sprintf("current change is %v ", amount))
+		// sendSlackNoti(fmt.Sprintf("current change is %v ", amount))
 		log.Println(fmt.Sprintf("Current change is %v ", amount))
 	} else {
 		//TODO for pdexV3
@@ -239,9 +238,8 @@ func resetCheckPointForToken(instList [][]string, state *jsonresult.CurrentPDESt
 				if err != nil {
 					panic(err)
 				}
-				pool := state.PDEPoolPairs[md.PDEContributionPairID]
 				for _, v := range tokenIDs {
-					if pool.Token1IDStr == v || pool.Token2IDStr == v {
+					if md.TokenIDStr == v {
 						result = append(result, v)
 					}
 				}
@@ -252,19 +250,15 @@ func resetCheckPointForToken(instList [][]string, state *jsonresult.CurrentPDESt
 				if err != nil {
 					panic(err)
 				}
-				pool := state.PDEPoolPairs[md.PDEContributionPairID]
 				for _, v := range tokenIDs {
-					if pool.Token1IDStr == v || pool.Token2IDStr == v {
+					if md.TokenIDStr == v {
 						result = append(result, v)
 					}
 				}
 			}
 		case metadata.PDEWithdrawalRequestMeta:
 			if contributionStatus != common.PDEWithdrawalRejectedChainStatus {
-				contentBytes, err := base64.StdEncoding.DecodeString(inst[3])
-				if err != nil {
-					panic(err)
-				}
+				contentBytes := []byte(inst[3])
 				var md metadata.PDEWithdrawalAcceptedContent
 				err = json.Unmarshal(contentBytes, &md)
 				if err != nil {
