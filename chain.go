@@ -143,6 +143,10 @@ retry:
 	}
 	err = ParseResponse(resultJson, &state)
 	if err != nil {
+		if strings.Contains(err.Error(), "Can't found ConsensusStateRootHash of beacon height") {
+			log.Println("retry getNewState")
+			goto retry
+		}
 		return nil, err
 	}
 	return &state, nil
